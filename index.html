@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Wiki-Links Browser Web Tool (2.0)</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body class="bg-gray-900 text-gray-200 font-sans">
+<div class="wiki-links-tool">
+  <div class="max-w-4xl mx-auto p-6">
+    <h2 class="text-4xl font-extrabold text-center mb-6 text-blue-400 drop-shadow-lg">🌐 Wiki-Links Browser (2.0)</h2>
+    <h3 class="text-lg font-light text-center mb-6 text-gray-400">👊ـــــــــــــــﮩ٨ـ❤️ MADE BY RUSTY-NAIL</h3>
+
+    <div class="flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
+      <label class="flex flex-col w-full md:w-1/3">
+        <span class="text-sm font-semibold mb-1">Filter by Name</span>
+        <select id="filter-name" class="rounded bg-gray-800 border border-gray-700 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+          <option value="">All</option>
+        </select>
+      </label>
+
+      <label class="flex flex-col w-full md:w-1/3">
+        <span class="text-sm font-semibold mb-1">Filter by Date</span>
+        <select id="filter-date" class="rounded bg-gray-800 border border-gray-700 p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none transition">
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="last7">Last 7 Days</option>
+          <option value="thisMonth">This Month</option>
+          <option value="lastMonth">Last Month</option>
+          <option value="thisYear">This Year</option>
+          <option value="all" selected>All Time</option>
+        </select>
+      </label>
+
+      <button id="search-btn" class="w-full md:w-auto bg-blue-600 text-white px-5 py-2 mt-2 md:mt-0 rounded-lg hover:bg-blue-700 hover:scale-105 transition transform shadow-md">
+        🔍 Search
+      </button>
+    </div>
+
+    <div class="text-right mb-4 hidden" id="copy-all-container">
+      <button id="copy-all-btn" class="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 hover:scale-105 transition transform shadow-md">
+        📋 Copy All Visible URLs
+      </button>
+    </div>
+
+    <div id="results" class="space-y-4"></div>
+
+    <div class="flex justify-between items-center mt-6 hidden" id="pagination-controls">
+      <button id="prev-links" class="bg-gray-700 text-white px-5 py-2 rounded-lg hover:bg-gray-600 hover:scale-105 transition transform shadow-md">⬅️ Previous Links</button>
+      <button id="next-links" class="bg-gray-700 text-white px-5 py-2 rounded-lg hover:bg-gray-600 hover:scale-105 transition transform shadow-md">Next Links ➡️</button>
+    </div>
+  </div>
+
+  <div id="loading-spinner" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden backdrop-blur-sm">
+    <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin drop-shadow-lg"></div>
+  </div>
+
+  <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-xl hidden z-50 animate-bounce">
+    ✅ Rated successfully!
+  </div>
+
+  <script>
+    const supabase = window.supabase.createClient(
+      'https://ylbeucokkfotgghbveuv.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsYmV1Y29ra2ZvdGdnaGJ2ZXV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ0MjU5MjksImV4cCI6MjA2MDAwMTkyOX0.EM52Z8YVA4xuCnNPLrAuweJq652QAPa3AjxjNRIrxE8'
+    );
+
+    let page = 0;
+    const pageSize = 5;
+    let currentFilter = { name: '', range: 'all' };
+    let totalLinks = 0;
+
+    document.getElementById('search-btn').addEventListener('click', applyFilters);
+    document.getElementById('next-links').addEventListener('click', () => { page++; fetchLinks(); });
+    document.getElementById('prev-links').addEventListener('click', () => { page--; fetchLinks(); });
+    document.getElementById('copy-all-btn').addEventListener('click', copyAllVisibleLinks);
+
+    function showSpinner() {
+      document.getElementById('loading-spinner').classList.remove('hidden');
+    }
+
+    function hideSpinner() {
+      document.getElementById('loading-spinner').classList.add('hidden');
+    }
+
+    function showToast(message = 'Action completed!') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 2000);
+    }
+
+    async function loadNames() {
+      const { data } = await supabase.from('link_names').select('name');
+      const select = document.getElementById('filter-name');
+      select.innerHTML = `<option value="">All</option>`;
+      data?.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = d.name;
+        select.appendChild(opt);
+      });
+    }
+
+    function getDateRange(rangeType) {
+      const now = new Date();
+      const start = new Date();
+      const end = new Date();
+      switch (rangeType) {
+        case 'today': start.setHours(0, 0, 0, 0); return { start, end: now };
+        case 'yesterday': start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); start.setHours(0, 0, 0, 0); end.setHours(23, 59, 59, 999); return { start, end };
+        case 'last7': start.setDate(start.getDate() - 6); return { start, end: now };
+        case 'thisMonth': start.setDate(1); return { start, end: now };
+        case 'lastMonth': start.setMonth(start.getMonth() - 1); start.setDate(1); end.setMonth(end.getMonth() - 1); end.setDate(new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate()); end.setHours(23, 59, 59, 999); return { start, end };
+        case 'thisYear': start.setMonth(0, 1); start.setHours(0, 0, 0, 0); return { start, end: now };
+        default: return null;
+      }
+    }
+
+    async function applyFilters() {
+      page = 0;
+      currentFilter.name = document.getElementById('filter-name').value;
+      currentFilter.range = document.getElementById('filter-date').value;
+      await countTotalLinks();
+      await fetchLinks();
+    }
+
+    async function countTotalLinks() {
+      let query = supabase.from('links').select('*', { count: 'exact', head: true });
+      if (currentFilter.name) query = query.eq('name', currentFilter.name);
+      const range = getDateRange(currentFilter.range);
+      if (range) {
+        query = query.gte('date', range.start.toISOString().split('T')[0]).lte('date', range.end.toISOString().split('T')[0]);
+      }
+      const { count } = await query;
+      totalLinks = count || 0;
+    }
+
+    async function fetchLinks() {
+      showSpinner();
+      const container = document.getElementById('results');
+      container.innerHTML = '';
+
+      let query = supabase
+        .from('links')
+        .select('*')
+        .order('date', { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (currentFilter.name) query = query.eq('name', currentFilter.name);
+      const range = getDateRange(currentFilter.range);
+      if (range) {
+        query = query.gte('date', range.start.toISOString().split('T')[0]).lte('date', range.end.toISOString().split('T')[0]);
+      }
+
+      const { data, error } = await query;
+      hideSpinner();
+
+      if (error || !data || data.length === 0) {
+        container.innerHTML = `<div class="bg-yellow-900 text-yellow-200 p-4 rounded shadow-lg text-center">⚠️ No links found.</div>`;
+        document.getElementById('copy-all-container').classList.add('hidden');
+        document.getElementById('pagination-controls').classList.add('hidden');
+        return;
+      }
+
+      for (const link of data) {
+        const { count: upCount } = await supabase.from('ratings_up').select('*', { count: 'exact', head: true }).eq('link_id', link.id);
+        const { count: downCount } = await supabase.from('ratings_down').select('*', { count: 'exact', head: true }).eq('link_id', link.id);
+        const formattedDate = new Date(link.date).toISOString().split('T')[0];
+
+        const div = document.createElement('div');
+        div.className = 'bg-gray-800 p-5 rounded-xl shadow-lg hover:shadow-2xl transition transform hover:scale-[1.02]';
+        div.innerHTML = `
+          <h3 class="text-lg font-semibold mb-2 text-blue-300">${link.name} <span class="text-sm text-gray-400">(${formattedDate})</span></h3>
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <a href="${link.url}" target="_blank" class="text-blue-400 underline break-words max-w-full hover:text-blue-300 transition">${link.url}</a>
+            <button onclick="copySingleLink('${link.url}')" class="text-sm bg-gray-700 px-3 py-1 rounded hover:bg-gray-600 transition">📋 Copy</button>
+          </div>
+          <div class="flex items-center gap-4 mt-4 text-sm">
+            <button onclick="rateLink('${link.id}', 'up', this)" class="flex items-center gap-1 bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg shadow-md transition">✅ <span>${upCount || 0}</span></button>
+            <button onclick="rateLink('${link.id}', 'down', this)" class="flex items-center gap-1 bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded-lg shadow-md transition">❌ <span>${downCount || 0}</span></button>
+          </div>`;
+        container.appendChild(div);
+      }
+
+      document.getElementById('copy-all-container').classList.remove('hidden');
+      const prevBtn = document.getElementById('prev-links');
+      const nextBtn = document.getElementById('next-links');
+      const pagination = document.getElementById('pagination-controls');
+      pagination.classList.remove('hidden');
+      prevBtn.disabled = page === 0;
+      nextBtn.disabled = (page + 1) * pageSize >= totalLinks;
+    }
+
+    async function rateLink(linkId, direction, btn) {
+      const table = direction === 'up' ? 'ratings_up' : 'ratings_down';
+      await supabase.from(table).insert({ link_id: linkId });
+      const countSpan = btn.querySelector('span');
+      countSpan.textContent = parseInt(countSpan.textContent) + 1;
+      showToast(direction === 'up' ? '✅ Upvoted!' : '❌ Downvoted!');
+    }
+
+    function copySingleLink(url) {
+      navigator.clipboard.writeText(url);
+      showToast('📋 Link copied!');
+    }
+
+    function copyAllVisibleLinks() {
+      const links = document.querySelectorAll('#results a');
+      const urls = Array.from(links).map(a => a.href).join('\n');
+      navigator.clipboard.writeText(urls);
+      showToast('📋 All visible links copied!');
+    }
+
+    loadNames();
+    applyFilters();
+  </script>
+</div>
+</body>
+</html>
